@@ -1,30 +1,21 @@
 package routes
 
 import (
-    "github.com/gin-gonic/gin"
-    "gotask/handlers"
-    "gotask/middleware"
+	"github.com/gin-gonic/gin"
+	"gotask/handlers"
 )
- 
-func SetupRoutes(r *gin.Engine) {
-    api := r.Group("/api/v1")
- 
-    // Public routes — no auth needed
-    auth := api.Group("/auth")
-    {
-        auth.POST("/register", handlers.RegisterUser)
-        auth.POST("/login",    handlers.LoginUser)
-    }
- 
-    // Protected routes — RequireAuth middleware runs first
-    tasks := api.Group("/tasks")
-    tasks.Use(middleware.RequireAuth)
-    {
-        tasks.GET("",      handlers.GetTasks)
-        tasks.POST("",     handlers.CreateTask)
-        tasks.GET("/:id",  handlers.GetTask)
-        tasks.PUT("/:id",  handlers.UpdateTask)
-        tasks.DELETE("/:id", handlers.DeleteTask)
-    }
-}
 
+func SetupRoutes(r *gin.Engine) {
+	api := r.Group("/api/v1")
+	{
+		tasks := api.Group("/tasks")
+		{
+			tasks.GET("", handlers.GetTasks)
+			tasks.POST("", handlers.CreateTask)
+			tasks.GET("/:id", handlers.GetTask)
+			tasks.PUT("/:id", handlers.UpdateTask)     // Task 1
+			tasks.DELETE("/:id", handlers.DeleteTask)  // Task 2
+			tasks.PATCH("/:id", handlers.PatchTask)    // Bonus
+		}
+	}
+}

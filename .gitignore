@@ -1,0 +1,9 @@
+# Local environment variables containing passwords
+.env
+
+# Go binaries and builds
+bin/
+gotask
+
+# Air hot reload temporary build files
+tmp/
