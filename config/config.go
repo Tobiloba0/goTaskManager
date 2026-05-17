@@ -12,6 +12,7 @@ type Config struct {
 	DBName     string
 	DBPort     string
 	Port       string
+	JWTSecret  string
 }
 
 func Load() Config {
@@ -22,6 +23,7 @@ func Load() Config {
 		DBName:     getEnv("DB_NAME", "gotask"),
 		DBPort:     getEnv("DB_PORT", "5432"),
 		Port:       getEnv("PORT", "8080"),
+		JWTSecret:  getEnv("JWT_SECRET", "QEFNfPrRjL3nL6MXpeZL9EsB6fG+2pY6Zu72ku+mCnE="),
 	}
 }
 

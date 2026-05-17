@@ -1,136 +1,123 @@
 package handlers
-
+ 
 import (
-	"net/http"
-	"strconv"
-	"sync"
-	"gotask/models"
-	"github.com/gin-gonic/gin"
+    "net/http"
+    "strconv"
+ 
+    "github.com/gin-gonic/gin"
+    "gotask/db"
+    "gotask/models"
 )
-
-var (
-	tasks  []models.Task
-	nextID uint = 1
-	mu     sync.Mutex 
-)
-
-func UpdateTask(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
-		return
-	}
-
-	var input models.UpdateTaskInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	// Find the task and replace its values completely
-	for i, t := range tasks {
-		if t.ID == uint(id) {
-			tasks[i].Title = input.Title
-			tasks[i].Description = input.Description
-			tasks[i].Status = input.Status
-
-			c.JSON(http.StatusOK, gin.H{"data": tasks[i]})
-			return
-		}
-	}
-
-	c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
-}
-
-// Task 2 — Add DeleteTask (DELETE /tasks/:id)
-func DeleteTask(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
-		return
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	for i, t := range tasks {
-		if t.ID == uint(id) {
-			// Remove the element from the slice safely
-			tasks = append(tasks[:i], tasks[i+1:]...)
-			
-			// 204 No Content sends no body back
-			c.Status(http.StatusNoContent)
-			return
-		}
-	}
-
-	c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
-}
-
-// Task 3 — Filter by Status (Updated GetTasks)
+ 
 func GetTasks(c *gin.Context) {
-	statusFilter := c.Query("status") // Reads ?status=pending
+    var tasks []models.Task
 
-	mu.Lock()
-	defer mu.Unlock()
+    // Fetch the logged-in user from the JWT middleware context
+    user, _ := c.MustGet("currentUser").(models.User)
 
-	// If no filter query parameter is passed, return everything
-	if statusFilter == "" {
-		c.JSON(http.StatusOK, gin.H{"data": tasks})
-		return
-	}
+    // 1. Establish defaults if query params aren't explicitly declared
+    pageStr := c.DefaultQuery("page", "1")
+    limitStr := c.DefaultQuery("limit", "10")
 
-	// Filter tasks dynamically into a temporary slice
-	filtered := []models.Task{}
-	for _, t := range tasks {
-		if string(t.Status) == statusFilter {
-			filtered = append(filtered, t)
-		}
-	}
+    // 2. Convert strings safely to integers
+    page, err := strconv.Atoi(pageStr)
+    if err != nil || page < 1 {
+        page = 1
+    }
 
-	c.JSON(http.StatusOK, gin.H{"data": filtered})
+    limit, err := strconv.Atoi(limitStr)
+    if err != nil || limit < 1 {
+        limit = 10
+    }
+
+    // 3. Compute structural pagination offset
+    offset := (page - 1) * limit
+
+    // 4. Build query chains dynamically, scoped specifically to this user!
+    query := db.DB.Model(&models.Task{}).Where("user_id = ?", user.ID)
+    
+    if status := c.Query("status"); status != "" {
+        query = query.Where("status = ?", status)
+    }
+
+    // 5. Query the database using GORM Limit and Offset directives
+    if err := query.Limit(limit).Offset(offset).Find(&tasks).Error; err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+        return
+    }
+
+    c.JSON(http.StatusOK, gin.H{
+        "page":  page,
+        "limit": limit,
+        "data":  tasks,
+    })
 }
+ 
+func CreateTask(c *gin.Context) {
+    var input models.CreateTaskInput
+    if err := c.ShouldBindJSON(&input); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+        return
+    }
+    
+    user, _ := c.MustGet("currentUser").(models.User)
+    task := models.Task{
+        UserID:      user.ID,
+        Title:       input.Title, 
+        Description: input.Description,
+        DueDate:     input.DueDate, 
+    }
+    
+    if err := db.DB.Create(&task).Error; err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+        return
+    }
+    c.JSON(http.StatusCreated, gin.H{"data": task})
+}
+ 
+func GetTask(c *gin.Context) {
+    var task models.Task
+    user, _ := c.MustGet("currentUser").(models.User)
 
-// Bonus — Add a PatchTask (PATCH /tasks/:id)
-func PatchTask(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
-		return
-	}
+    // Find the task by ID AND make sure it belongs to the logged-in user
+    if err := db.DB.Where("id = ? AND user_id = ?", c.Param("id"), user.ID).First(&task).Error; err != nil {
+        c.JSON(http.StatusNotFound, gin.H{"error": "task not found or access denied"})
+        return
+    }
 
-	var input models.PatchTaskInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
+    c.JSON(http.StatusOK, gin.H{"data": task})
+}
+ 
+func UpdateTask(c *gin.Context) {
+    var task models.Task
+    user, _ := c.MustGet("currentUser").(models.User)
 
-	mu.Lock()
-	defer mu.Unlock()
+    // Secure the lookup so you can only fetch your own task
+    if err := db.DB.Where("id = ? AND user_id = ?", c.Param("id"), user.ID).First(&task).Error; err != nil {
+        c.JSON(http.StatusNotFound, gin.H{"error": "task not found or access denied"})
+        return
+    }
+ 
+    var input models.UpdateTaskInput
+    if err := c.ShouldBindJSON(&input); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+        return
+    }
+ 
+    db.DB.Model(&task).Updates(input)
+    c.JSON(http.StatusOK, gin.H{"data": task})
+}
+ 
+func DeleteTask(c *gin.Context) {
+    var task models.Task
+    user, _ := c.MustGet("currentUser").(models.User)
 
-	for i, t := range tasks {
-		if t.ID == uint(id) {
-			// Check if pointer is not nil; if it holds a address, dereference and apply it
-			if input.Title != nil {
-				tasks[i].Title = *input.Title
-			}
-			if input.Description != nil {
-				tasks[i].Description = *input.Description
-			}
-			if input.Status != nil {
-				tasks[i].Status = *input.Status
-			}
+    // Secure the lookup so you can only delete your own task
+    if err := db.DB.Where("id = ? AND user_id = ?", c.Param("id"), user.ID).First(&task).Error; err != nil {
+        c.JSON(http.StatusNotFound, gin.H{"error": "task not found or access denied"})
+        return
+    }
 
-			c.JSON(http.StatusOK, gin.H{"data": tasks[i]})
-			return
-		}
-	}
-
-	c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+    db.DB.Delete(&task)
+    c.JSON(http.StatusNoContent, nil) // 204 No Content success
 }

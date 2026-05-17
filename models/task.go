@@ -1,5 +1,7 @@
 package models
  
+
+import "gorm.io/gorm"
 import "time"
  
 // Status represents the current state of a task
@@ -13,17 +15,19 @@ const (
  
 // Task is the core data structure for our API
 type Task struct {
-    ID          uint      `json:"id"`
-    Title       string    `json:"title"`
+    gorm.Model
+	UserID uint `json:"user_id" gorm:"not null"`
+    Title       string    `json:"title"     gorm:"not null"`
     Description string    `json:"description"`
-    Status      Status    `json:"status"`
-    CreatedAt   time.Time `json:"created_at"`
+    Status      Status    `json:"status"    gorm:"default:pending"`
+    DueDate     *time.Time `json:"due_date"`
 }
  
 // CreateTaskInput holds the fields a client sends when creating a task
 type CreateTaskInput struct {
     Title       string `json:"title"       binding:"required"`
     Description string `json:"description"`
+	DueDate     *time.Time `json:"due_date"`
 }
 
 type UpdateTaskInput struct {
